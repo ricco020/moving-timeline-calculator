@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moving timeline calculator: dated moving checklist from your moving day</title>
+<meta name="description" content="Free moving timeline calculator: enter your moving day, the day you start and your lease notice period. It dates every task, squeezes the 8-week checklist in order when you have less time, flags what is already tight, and exports it to your calendar (.ics) or a spreadsheet (CSV).">
+<style>
+:root{--ink:#1d1a24;--paper:#f3efe6;--navy:#23395b;--rust:#b2542b;--rule:#d8d0bd}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 Georgia,"Iowan Old Style",serif}
+main{max-width:800px;margin:0 auto;padding:36px 18px 60px}
+h1{font-size:1.9rem;line-height:1.15;margin:0 0 .4em;color:var(--navy)}
+h2{font-size:1.2rem;margin:1.8em 0 .5em;color:var(--navy)}
+a{color:var(--navy)}
+.box{background:#fff;border:1px solid var(--rule);border-radius:8px;padding:14px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px}
+.row label{font-size:.85rem;display:flex;flex-direction:column;gap:3px;min-width:0}
+input,select{font:inherit;padding:7px;border:1px solid var(--rule);border-radius:5px;background:#fff;width:100%;min-width:0}
+.dl{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
+.dl button{font:inherit;font-weight:bold;padding:9px 14px;border:2px solid var(--navy);border-radius:6px;background:#fff;color:var(--navy);cursor:pointer}
+.dl button.main{background:var(--navy);color:#fff}
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0}
+.sum div{background:#fff;border-top:4px solid var(--rust);padding:10px 14px;border-radius:4px}
+.sum b{display:block;font-size:1.2rem;color:var(--navy)}
+.warn{background:#fbe9e1;border-left:4px solid var(--rust);padding:8px 12px;border-radius:4px;margin:10px 0}
+.res{width:100%;border-collapse:collapse;background:#fff;font-size:.93rem}
+.res th,.res td{border-bottom:1px solid var(--rule);padding:6px 8px;text-align:left;vertical-align:top}
+.res td.d{white-space:nowrap}
+.res tr.g td{background:#eef3f8;font-weight:bold;color:var(--navy)}
+.tag{display:inline-block;font-size:.75rem;padding:0 6px;border-radius:3px;background:#fbe9e1;color:var(--rust);margin-left:4px}
+.scroll{overflow-x:auto}
+small{color:#5f5a66}
+@media(max-width:620px){.res{font-size:.85rem}.res th,.res td{padding:5px 4px}}
+@media print{.box,.dl,.noprint{display:none}body{background:#fff}}
+</style>
+</head>
+<body>
+<main>
+<h1>Moving timeline calculator</h1>
+<p>Moving checklists count down from 8 weeks, but most people find out later than that. Enter your moving day and the day you start: every task gets a real date, the list is squeezed in the same order when you have less time, and the tasks that are already tight are flagged so you do them first. Add your lease notice period to get the date your landlord needs your letter.</p>
+<div class="box">
+<div class="row">
+<label>Moving day<input id="wed" type="date"></label>
+<label>Start on<input id="start" type="date"></label>
+<label>Lease notice, days (0 = owner)<input id="notice" type="number" min="0" max="365" value="30" inputmode="numeric"></label>
+<label>Tasks dated in the past<select id="mode"><option value="squeeze">Squeeze to fit</option><option value="catch">Keep ideal dates</option></select></label>
+</div>
+<div class="dl"><button class="main" id="ics" type="button">Add to calendar (.ics)</button><button id="csv" type="button">Spreadsheet (CSV)</button><button id="prn" type="button">Print</button></div>
+<small>Calendar file: one all-day event per task on its date, works with Google Calendar, Apple Calendar and Outlook (import). Nothing is sent anywhere, the page runs in your browser.</small>
+</div>
+<div id="out"></div>
+<h2 class="noprint">How the dates are set</h2>
+<div class="noprint">
+<p>Each task has two lead times: the usual one (how long before moving day people typically do it, for example 50 days to book movers) and the latest sensible one (for example 2 days to file the USPS change of address). These are common planning conventions, not survey data: in summer, around month ends and in big cities, movers and internet installs book out sooner.</p>
+<p><b>Squeeze</b> (default): when you have less than 8 weeks, every usual lead time is scaled down by the same ratio, so the order stays the same, but no task is moved later than its latest sensible date. <b>Keep ideal dates</b>: tasks whose usual date has passed all go on your start date and are marked late.</p>
+<p>The lease notice is never squeezed: it is a term of your lease. If the notice date is already past, the calculator says until when you may owe rent. After moving day, the driver license and registration line is a reminder only: the legal deadline depends on your state, check it with your DMV.</p>
+<p>Want it on paper, with a change-of-address list, a numbered box inventory and a first-night box checklist? The <a href="https://tidysheets.shop/p/moving-checklist-printable">printable moving checklist</a> has the same week-by-week order in 5 pages (US Letter and A4).</p>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const DAY=86400000;
+const ymd=d=>d.toISOString().slice(0,10);
+const parse=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d))};
+const nice=d=>d.toLocaleDateString('en-US',{timeZone:'UTC',weekday:'short',month:'short',day:'numeric',year:'numeric'});
+// [task, usual days before, latest days before]; negative = after the move
+const TASKS=[
+['Set a moving budget (movers, deposits, overlap rent, supplies)',60,21],
+['Get 3 moving quotes (in-home or video survey)',56,21],
+['Book the movers or the truck rental',50,14],
+['Declutter: sell, donate or toss what you will not move',49,10],
+['Ask for school records and enroll the kids at the new school',42,14],
+['Measure the new home: large furniture, doorways, stairs',42,7],
+['Order boxes, tape, markers and padding',35,10],
+['Transfer medical and vet records, refill prescriptions',35,10],
+['Book internet installation at the new address',28,10],
+['Schedule utility shut-off (old) and start (new): power, gas, water',28,7],
+['Pack the rooms you use least (storage, guest room, books)',28,7],
+['Book cleaners for the old home, or plan the cleaning day',21,5],
+['File the USPS change of address',14,2],
+['Update your address: bank, employer, insurance, subscriptions',14,1],
+['Arrange childcare and pet care for moving day',14,3],
+['Use up frozen and perishable food',14,3],
+['Confirm movers: date, arrival time, both addresses, parking',7,2],
+['Pack everything except the essentials',7,2],
+['Defrost and clean the fridge and freezer',2,1],
+['Pack the first-night box (sheets, chargers, toiletries, meds, tools)',2,1],
+['Clean the old home and take dated photos for the deposit',1,0],
+['Moving day: meter readings, final walk-through, return keys',0,0],
+['Unpack the kitchen and make the beds',-1,-1],
+['Test smoke alarms and change the locks if possible',-3,-3],
+['Update driver license and car registration (check your state deadline)',-10,-10],
+['Register to vote at the new address',-14,-14],
+['Follow up on the security deposit refund',-30,-30]];
+const MAXI=Math.max(...TASKS.map(t=>t[1]));
+function plan(wed,start,mode,notice){
+ const A=Math.round((wed-start)/DAY);const s=Math.min(1,Math.max(0,A)/MAXI);
+ const out=TASKS.map(([name,I,M],i)=>{let off,late=false,tight=false;
+  if(I<=0){off=I}
+  else if(mode==='squeeze'){off=Math.round(Math.max(M,I*s));if(off>A){off=Math.max(A,0);tight=true}}
+  else{off=I;if(off>A){off=Math.max(A,0);late=true;if(M>A)tight=true}}
+  if(I>0&&M>A)tight=true;
+  return{name,i,I,M,date:new Date(wed.getTime()-off*DAY),late,tight}});
+ const N=notice;if(N>0){const t={name:'Give written notice to your landlord ('+N+' days required by your lease)',i:-1,I:N,M:N,date:new Date(wed.getTime()-N*DAY),late:false,tight:false,notice:true};if(N>A){t.date=new Date(start.getTime());t.tight=true;t.late=true}out.push(t)}
+ out.sort((a,b)=>a.date-b.date||a.i-b.i);return{A,s,N,tasks:out}}
+const T0=new Date(),T=new Date(Date.UTC(T0.getFullYear(),T0.getMonth(),T0.getDate()));
+let last=null;
+function run(){if(!$('wed').value||!$('start').value)return;const wed=parse($('wed').value),start=parse($('start').value);
+ if(wed<=start){$('out').innerHTML='<div class="warn">The moving date has to be after the start date.</div>';last=null;return}
+ const nv=Math.max(0,Math.min(365,parseInt($('notice').value||'0',10)||0));const p=plan(wed,start,$('mode').value,nv);last={p,wed};
+ const tight=p.tasks.filter(t=>t.tight).length,late=p.tasks.filter(t=>t.late).length;
+ const weeks=(p.A/7).toFixed(1);
+ let h=`<div class="sum"><div>Time to plan<b>${p.A} days</b><small>about ${weeks} weeks</small></div><div>Timeline scale<b>${$('mode').value==='squeeze'?Math.round(p.s*100)+' %':'classic dates'}</b><small>${p.s>=1?'you have the full 8 weeks or more':'of the usual 8-week lead times'}</small></div><div>Tight tasks<b>${tight}</b><small>start date already past their latest sensible date</small></div></div>`;
+ if(p.A<21)h+=`<div class="warn">Less than 3 weeks: book movers or a truck today, and ask for a weekday or mid-month slot, which movers fill last.</div>`;
+ if(p.N>p.A)h+=`<div class="warn">Your lease asks for ${p.N} days of notice but you move in ${p.A} days: give notice today and expect to owe rent until ${nice(new Date(start.getTime()+p.N*DAY))} unless your landlord agrees otherwise in writing.</div>`;
+ if(late)h+=`<div class="warn">${late} tasks had a classic date before your start date. They are on ${nice(start)} and marked late.</div>`;
+ let cur='';h+=`<div class="scroll"><table class="res"><tr><th>Date</th><th>Task</th></tr>`;
+ for(const t of p.tasks){const m=t.date.toLocaleDateString('en-US',{timeZone:'UTC',month:'long',year:'numeric'});if(m!==cur){cur=m;h+=`<tr class="g"><td colspan="2">${m}</td></tr>`}
+  h+=`<tr><td class="d">${nice(t.date)}</td><td>${t.name}${t.tight?'<span class="tag">tight</span>':''}${t.late?'<span class="tag">late</span>':''}</td></tr>`}
+ h+=`</table></div>`;$('out').innerHTML=h}
+function esc(s){return s.replace(/\\/g,'\\\\').replace(/;/g,'\;').replace(/,/g,'\\,')}
+function fold(l){const o=[];let b=new TextEncoder().encode(l);if(b.length<=75)return l;let s='',n=0;for(const ch of l){const k=new TextEncoder().encode(ch).length;if(n+k>(o.length?74:75)){o.push(s);s='';n=0}s+=ch;n+=k}o.push(s);return o.join('\r\n ')}
+function ics(){if(!last)return;const st=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ricco020//moving-timeline//EN','CALSCALE:GREGORIAN','X-WR-CALNAME:Moving plan'];
+ last.p.tasks.forEach((t,i)=>{const d=ymd(t.date).replace(/-/g,''),e=ymd(new Date(t.date.getTime()+DAY)).replace(/-/g,'');
+  L.push('BEGIN:VEVENT','UID:moving-'+ymd(last.wed)+'-'+t.i+'@ricco020.github.io','DTSTAMP:'+st,'DTSTART;VALUE=DATE:'+d,'DTEND;VALUE=DATE:'+e,fold('SUMMARY:'+esc((t.tight?'[tight] ':'')+t.name)),'TRANSP:TRANSPARENT','END:VEVENT')});
+ L.push('END:VCALENDAR');dl(L.join('\r\n')+'\r\n','moving-plan.ics','text/calendar')}
+function dl(txt,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;a.click()}
+$('ics').onclick=ics;
+$('csv').onclick=()=>{if(!last)return;const q=s=>'"'+String(s).replace(/"/g,'""')+'"';const L=['Date,Task,Status,Done'];for(const t of last.p.tasks)L.push([ymd(t.date),q(t.name),t.tight?'tight':(t.late?'late':''),''].join(','));dl(L.join('\r\n'),'moving-plan.csv','text/csv')};
+$('prn').onclick=()=>window.print();
+['wed','start','mode','notice'].forEach(i=>$(i).oninput=run);
+$('start').value=ymd(T);$('wed').value=ymd(new Date(T.getTime()+42*DAY));
+run();
+</script>
+</body>
+</html>
